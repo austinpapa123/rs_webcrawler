@@ -1,14 +1,28 @@
 use reqwest::Client;
 use scraper::{Html, Selector};
 use futures::future::join_all;
+use std::env;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 
 #[tokio::main]
-async fn main() {
-    let urls = vec![
-        "https://httpbin.org/html",
-        "https://example.com",
-        "https://www.rust-lang.org",
-    ];
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // get command line args: expect file path as first argument
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: web_crawler <path_to_urls.txt>");
+        std::process::exit(1);
+    }
+    let file_path = &args[1];
+
+    // read URLs line by line
+    let urls = read_lines(file_path)?
+        .filter_map(|line| line.ok()) // remove io::Error
+        .filter(|line| !line.trim().is_empty()) // skip empty lines
+        .collect::<Vec<String>>();
+
+    println!("Found {} URLs to crawl.\n", urls.len());
 
     let client: Client = Client::new();
 
@@ -24,6 +38,16 @@ async fn main() {
     });
 
     join_all(futures).await;
+    Ok(())
+}
+
+// helper to read file line by line
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
 }
 
 async fn fetch_title(client: &Client, url: &str) -> Result<String, Box<dyn std::error::Error>> {
